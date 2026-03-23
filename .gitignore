@@ -1,0 +1,46 @@
+# virtual environment
+.venv/
+
+# uv lock file: should be committed to version control for reproducibility
+# For application projects, it is recommended to include uv.lock
+# in version control. For libraries, it can be ignored.
+# Remove the '#' from the next line if you are building a library
+# and want to ignore the lock file.
+# uv.lock
+
+# Byte-code files
+*.pyc
+__pycache__/
+
+# Compiled extensions (may not be applicable to all projects)
+*.pyd
+*.so
+
+# Editor/IDE files
+.idea/  # For PyCharm/IntelliJ
+.vscode/ # For VS Code (optional, if you have user-specific settings)
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Environment variables
+.env
+.flaskenv
+
+# file ignore
+run.sh
+
+# logs
+logs/
+
+# idea
+.idea/
+
+# dataset
+data/
+
+# others folder
+.claude/
+
+*.log
