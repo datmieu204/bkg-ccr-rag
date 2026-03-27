@@ -82,7 +82,7 @@ def chunk_document(
     embeddings = []
     for i, sent in enumerate(sentences):
         if not sent.strip():
-            embeddings.append(np.zeros(384))  # bge-small-en-v1.5 dim
+            embeddings.append(np.zeros(1024))  # bge-m3
             continue
         
         try:
@@ -90,7 +90,7 @@ def chunk_document(
             embeddings.append(np.array(emb))
         except Exception as e:
             logger.warning(f"Failed to embed sentence {i}: {e}")
-            embeddings.append(np.zeros(384))
+            embeddings.append(np.zeros(1024))
     
     logger.info(f"Embeddings generated")
     
