@@ -4,11 +4,11 @@
 
 BKG-CCR RAG proposes a multimodal alignment paradigm for biomedical knowledge graphs that couples structured relational evidence with textual and sequence-derived semantics. The framework constructs graph-centric subviews anchored on target entities, encodes heterogeneous topology with relation-aware graph encoders, and fuses language and biological sequence signals into a unified representation. A contrastive objective aligns graph and text/sequence embeddings in a shared latent space, enabling robust retrieval and reasoning under incomplete or noisy knowledge graphs. This approach emphasizes cross-view consistency, hard negative discrimination, and scalable training to improve downstream RAG fidelity.
 
-## Core Idea (Academic Summary)
+## Core Idea
 
 The system learns cross-modal consistency between (i) a graph view derived from heterogeneous relations and (ii) a text/sequence view derived from entity summaries and biological sequences. Each view is projected into a common embedding space and optimized with a symmetric contrastive loss. Memory bank sampling and hard negative mining can further sharpen decision boundaries, yielding more discriminative alignments across modalities.
 
-## Project Architecture (Tree View)
+## Project Architecture
 
 ```
 BKG-CCR RAG
@@ -31,36 +31,27 @@ BKG-CCR RAG
 
 ## Graph Construction Workflow
 
-1) 
-Load the biomedical knowledge graph into Neo4j.
+1) Load the biomedical knowledge graph into Neo4j.
 
-2) 
-For each target entity, extract a subgraph by expanding neighbors up to a configurable hop count and restricting to relevant relation types.
+2) For each target entity, extract a subgraph by expanding neighbors up to a configurable hop count and restricting to relevant relation types.
 
-3) 
-Mark anchor nodes belonging to the target entity's original subgraph to prioritize them during pooling.
+3) Mark anchor nodes belonging to the target entity's original subgraph to prioritize them during pooling.
 
-4) 
-Construct two semantic views:
-	 - Text view from summaries and entity descriptions.
-	 - Sequence view from biological sequences grouped by entity type.
+4) Construct two semantic views:
+    - Text view from summaries and entity descriptions.
+    - Sequence view from biological sequences grouped by entity type.
 
 ## Alignment and Training Workflow
 
-1) 
-Encode the text/sequence view with transformer encoders and aggregate into a single textual embedding per subgraph.
+1) Encode the text/sequence view with transformer encoders and aggregate into a single textual embedding per subgraph.
 
-2) 
-Encode the graph view with a heterogeneous graph encoder (HGT or RGCN) and pool node representations with anchor-aware pooling.
+2) Encode the graph view with a heterogeneous graph encoder (HGT or RGCN) and pool node representations with anchor-aware pooling.
 
-3) 
-Fuse textual and sequence embeddings (gated or attention fusion).
+3) Fuse textual and sequence embeddings (gated or attention fusion).
 
-4) 
-Project text and graph embeddings into a shared latent space and apply normalization.
+4) Project text and graph embeddings into a shared latent space and apply normalization.
 
-5) 
-Optimize a symmetric InfoNCE objective. Optional memory banks and hard negatives improve discrimination under small batch sizes.
+5) Optimize a symmetric InfoNCE objective. Optional memory banks and hard negatives improve discrimination under small batch sizes.
 
 ## How to Run (Docker)
 
