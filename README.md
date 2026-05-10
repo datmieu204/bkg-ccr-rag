@@ -73,10 +73,41 @@ docker build -t bkg-ccr-rag .
 docker run --rm --network host bkg-ccr-rag \
 	--uri bolt://localhost:25505 \
 	--user neo4j \
-	--password datmieu2004 \
+	--password example_password \
+	--config src/configs/config.yaml \
+	--settings src/configs/settings.yaml \
+	--database neo4j \
 	--split top \
-	--epochs 1 \
-	--batch-size 8
+	--batch-size 8 \
+	--epochs 10 \
+	--learning-rate 3.0e-5 \
+	--weight-decay 1.0e-4 \
+	--device cuda \
+	--grid "encoders.graph.type=hgt,rgcn;fusion.type=gated,attention" \
+	--run-name run \
+	--use-wandb \
+	--wandb-project bkg-ccr-rag \
+	--wandb-entity your-entity \
+	--wandb-group exp-1 \
+	--wandb-tags "contrastive,kg" \
+	--checkpoint-dir checkpoints/run \
+	--save-every 200 \
+	--resume checkpoints/run/last.pt \
+	--early-stop-patience 3 \
+	--early-stop-delta 0.0 \
+	--log-interval 20 \
+	--amp \
+	--grad-accum-steps 1 \
+	--memory-bank-size 2048 \
+	--hard-neg-k 64 \
+	--learnable-temperature \
+	--temperature-min 0.01 \
+	--temperature-max 0.5 \
+	--freeze-text-epochs 1 \
+	--val-fraction 0.1 \
+	--val-seed 42 \
+	--val-max-batches 0 \
+	--val-k 10
 ```
 
 ## How to Run (Local)
@@ -109,10 +140,41 @@ PY
 python -m src.train \
 	--uri bolt://localhost:25505 \
 	--user neo4j \
-	--password datmieu2004 \
+	--password example_password \
+	--config src/configs/config.yaml \
+	--settings src/configs/settings.yaml \
+	--database neo4j \
 	--split top \
-	--epochs 1 \
-	--batch-size 8
+	--batch-size 8 \
+	--epochs 10 \
+	--learning-rate 3.0e-5 \
+	--weight-decay 1.0e-4 \
+	--device cuda \
+	--grid "encoders.graph.type=hgt,rgcn;fusion.type=gated,attention" \
+	--run-name run \
+	--use-wandb \
+	--wandb-project bkg-ccr-rag \
+	--wandb-entity your-entity \
+	--wandb-group exp-1 \
+	--wandb-tags "contrastive,kg" \
+	--checkpoint-dir checkpoints/run \
+	--save-every 200 \
+	--resume checkpoints/run/last.pt \
+	--early-stop-patience 3 \
+	--early-stop-delta 0.0 \
+	--log-interval 20 \
+	--amp \
+	--grad-accum-steps 1 \
+	--memory-bank-size 2048 \
+	--hard-neg-k 64 \
+	--learnable-temperature \
+	--temperature-min 0.01 \
+	--temperature-max 0.5 \
+	--freeze-text-epochs 1 \
+	--val-fraction 0.1 \
+	--val-seed 42 \
+	--val-max-batches 0 \
+	--val-k 10
 ```
 
 ## Notes
