@@ -1,0 +1,37 @@
+data:
+  neighbor_hops: 1
+  neighbor_rel_types:
+    - REFERENCE
+    - IS_REFERENCE_OF
+    - IS_REFERENCED_BY
+  include_summary: true
+  include_relation_texts: false #true
+  max_texts: 20 # 100
+
+encoders:
+  textual:
+    model_name: microsoft/BiomedNLP-PubMedBERT-base-uncased-abstract-fulltext
+    pooling: cls
+    max_length: 64
+    batch_size: 2
+  sequence:
+    model_name: cambridgeltl/SapBERT-from-PubMedBERT-fulltext
+    pooling: cls
+    max_length: 32
+    batch_size: 4
+  graph:
+    type: rgcn # hgt
+    hidden_dim: 128
+    num_layers: 2
+    num_heads: 2
+    dropout: 0.1
+
+fusion:
+  type: attention # gated
+
+projection:
+  hidden_dim: 128
+  out_dim: 128
+
+loss:
+  temperature: 0.07
