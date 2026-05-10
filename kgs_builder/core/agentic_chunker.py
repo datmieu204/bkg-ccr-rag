@@ -1,10 +1,11 @@
 # ./kgs_builder/core/agentic_chunker.py
 
+import os
 import uuid
 import time
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
-from nano_graphrag._llm import _get_openrouter_client
+from nano_graphrag._llm import gemini_complete_if_cache, _get_openrouter_model
 
 class AgenticChunker:
     def __init__(self):
@@ -15,11 +16,11 @@ class AgenticChunker:
         self.generate_new_metadata_ind = True
         self.print_logging = True
 
-        self.model = "google/gemini-2.0-flash-lite-001"
+        self.llm_provider = os.getenv("LLM_PROVIDER") or "openrouter"
+        self.model = _get_openrouter_model()
         self.max_retries = 3
         self.retry_sleep_seconds = 1.0
 
-        self.llm_client = _get_openrouter_client()
 
     def _run_async(self, coro):
         """Run an async coroutine from sync methods safely."""
@@ -33,14 +34,12 @@ class AgenticChunker:
             return executor.submit(asyncio.run, coro).result()
 
     async def _call_gemini_once(self, prompt: str) -> str:
-        response = await self.llm_client.chat.completions.create(
+        return await gemini_complete_if_cache(
             model=self.model,
-            messages=[
-                {"role": "user", "content": prompt}
-            ],
+            prompt=prompt,
+            provider=self.llm_provider,
             temperature=0,
         )
-        return response.choices[0].message.content or ""
 
     def _call_gemini_with_retry(self, prompt: str) -> str:
         last_error = None

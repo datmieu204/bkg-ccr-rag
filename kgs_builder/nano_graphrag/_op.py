@@ -3,7 +3,6 @@ import json
 import re
 from collections import Counter, defaultdict
 
-from ._llm import gemini_2_5_flash_complete
 from ._utils import (
     logger,
     clean_str,

@@ -1,9 +1,10 @@
 # ./kgs_builder/core/summerize.py
 
+import os
 import asyncio
 import tiktoken
 from concurrent.futures import ThreadPoolExecutor
-from kgs_builder.nano_graphrag._llm import _get_openrouter_client
+from kgs_builder.nano_graphrag._llm import gemini_complete_if_cache, _get_openrouter_model
 from helpers.logger import get_logger
 logger = get_logger("retrieve", log_file="logs/retrieve.log")
 
@@ -45,19 +46,18 @@ def _run_async(coro):
 
 
 async def call_api(chunk):
-    client = _get_openrouter_client()
-    response = await client.chat.completions.create(
-        model="google/gemini-2.0-flash-lite-001",
-        messages=[
-            {"role": "system", "content": sum_prompt},
-            {"role": "user", "content": chunk}
-        ],
+    provider = os.getenv("LLM_PROVIDER") or "openrouter"
+    model = _get_openrouter_model()
+    return await gemini_complete_if_cache(
+        model=model,
+        prompt=chunk,
+        system_prompt=sum_prompt,
+        provider=provider,
         temperature=0.2,
         max_tokens=1000,
         n=1,
         stop=None,
     )
-    return response.choices[0].message.content or ""
 
 def split_into_chunks(text, tokens=500):
     encoding = tiktoken.encoding_for_model('gpt-4-1106-preview')

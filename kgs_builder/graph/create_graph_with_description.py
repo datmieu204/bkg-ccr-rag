@@ -11,7 +11,7 @@ from collections import defaultdict
 
 from kgs_builder.nano_graphrag.prompt import PROMPTS
 from kgs_builder.nano_graphrag._utils import compute_mdhash_id
-from kgs_builder.nano_graphrag._llm import gemini_complete_if_cache
+from kgs_builder.nano_graphrag._llm import gemini_complete_if_cache, _get_openrouter_model
 
 from camel.loaders import UnstructuredIO
 from kgs_builder.utils import get_embedding, str_uuid, add_sum
@@ -105,9 +105,12 @@ async def extract_entities_with_description(content: str, entity_types=None):
     )
 
     logger.info(f"  [Entity Extraction] Extracting entities and relationships...")
+    provider = os.getenv("LLM_PROVIDER") or "openrouter"
+    model = _get_openrouter_model()
     response = await gemini_complete_if_cache(
-        model="google/gemini-2.0-flash-lite-001",
+        model=model,
         prompt=prompt,
+        provider=provider,
         system_prompt="You are a helpful assistant that extracts entities and relationships from medical texts."
     )
 

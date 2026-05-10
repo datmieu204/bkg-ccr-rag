@@ -9,7 +9,7 @@ from neo4j import GraphDatabase
 from camel.storages import Neo4jGraph
 from transformers import AutoTokenizer, AutoModel
 
-from kgs_builder.nano_graphrag._llm import _get_openrouter_client
+from kgs_builder.nano_graphrag._llm import gemini_complete_if_cache, _get_openrouter_model
 from kgs_builder.core.summerize import process_chunks
 from helpers.logger import get_logger
 logger = get_logger("utils", log_file="logs/utils.log")
@@ -127,23 +127,20 @@ def add_sum(n4j, content, gid):
 
 async def call_llm(sys, user):
     """
-    Calling Gemini 2.0 Flash with OpenRouter client.
+    Calling Gemini 2.0 Flash with the configured provider.
     """
-    client = _get_openrouter_client()
-
-    response = await client.chat.completions.create(
-        model="google/gemini-2.0-flash-lite-001",
-        messages=[
-            {"role": "system", "content": sys},
-            {"role": "user", "content": user}
-        ],
+    provider = os.getenv("LLM_PROVIDER") or "openrouter"
+    model = _get_openrouter_model()
+    return await gemini_complete_if_cache(
+        model=model,
+        prompt=user,
+        system_prompt=sys,
+        provider=provider,
         max_tokens=500,
         temperature=0.2,
         n=1,
         stop=None,
     )
-
-    return response.choices[0].message.content or ""
 
 def find_index_of_largest(nums):
     if not nums:

@@ -1,15 +1,47 @@
 # ./kgs_builder/core/retrieve.py
 
+import os
 import asyncio
+import re
 import numpy as np
 from concurrent.futures import ThreadPoolExecutor
 from typing import List, Dict, Tuple
 from kgs_builder.utils import get_bge_m3_embedding
-from kgs_builder.nano_graphrag._llm import _get_openrouter_client
+from kgs_builder.nano_graphrag._llm import gemini_complete_if_cache
 
 from helpers.logger import get_logger
 logger = get_logger("retrieve", log_file="logs/retrieve.log")
 
+async def safe_gemini_complete_with_retry(retries=5, **kwargs) -> str:
+    for attempt in range(retries):
+        try:
+            return await gemini_complete_if_cache(**kwargs)
+        except Exception as e:
+            error_msg = str(e).lower()
+            # Nếu là lỗi 429 hoặc Quota
+            if "429" in error_msg or "quota" in error_msg or "rate limit" in error_msg:
+                if attempt == retries - 1:
+                    logger.error(f"[LLM] Bỏ cuộc sau {retries} lần thử. Lỗi: {e}")
+                    return ""
+                
+                wait_time = 10.0 * (2 ** attempt) 
+                
+                match = re.search(r"retry in ([\d\.]+)s", error_msg)
+                if match:
+                    try:
+                        wait_time = float(match.group(1)) + 1.0
+                    except ValueError:
+                        pass
+                
+                logger.warning(f"[LLM 429 Quota] Đang bị giới hạn. Ngủ {wait_time:.2f}s trước khi thử lại... (Lần {attempt+1}/{retries})")
+                await asyncio.sleep(wait_time)
+            
+            else:
+                logger.error(f"[LLM Lỗi Không Xác Định] {e}")
+                if attempt == retries - 1:
+                    return ""
+                await asyncio.sleep(5.0)
+    return ""
 
 def _run_async(coro):
     try:
@@ -17,7 +49,6 @@ def _run_async(coro):
     except RuntimeError:
         return asyncio.run(coro)
 
-    # Running under an existing event loop (e.g. notebooks): execute in worker thread.
     with ThreadPoolExecutor(max_workers=1) as executor:
         return executor.submit(asyncio.run, coro).result()
 
@@ -146,13 +177,21 @@ async def llm_rerank(candidates: List[Dict], query: str, top_k: int = 5) -> List
     Your ranking:"""
 
     try:
-        client = _get_openrouter_client()
-        response = await client.chat.completions.create(
-            model="google/gemini-2.0-flash-lite-001",
-            messages=[{"role": "user", "content": rerank_prompt}],
+        provider = os.getenv("LLM_PROVIDER") or "openrouter"
+        model = os.getenv("OPENROUTER_MODEL") or os.getenv("LLM_MODEL") or "google/gemini-2.0-flash-lite-001"
+        
+        # SỬ DỤNG HÀM CÓ RETRY Ở ĐÂY
+        response_text = await safe_gemini_complete_with_retry(
+            model=model,
+            prompt=rerank_prompt,
+            provider=provider,
         )
 
-        numbers = [int(s.strip()) for s in response.choices[0].message.content.split(",") if s.strip().isdigit()]
+        if not response_text:
+            logger.warning("[LLM Rerank] Empty response (maybe out of retries), returning default ranking.")
+            return [c['gid'] for c in candidates[:top_k]]
+
+        numbers = [int(s.strip()) for s in response_text.split(",") if s.strip().isdigit()]
 
         ranked_gids = []
         for idx in numbers:
@@ -172,7 +211,13 @@ async def llm_rerank(candidates: List[Dict], query: str, top_k: int = 5) -> List
         logger.warning(f"[LLM Rerank] Reranking failed: {e}")
         return [c['gid'] for c in candidates[:top_k]]
     
-def hybrid_retrieve(n4j, query: str, top_k: int=3, vector_candidates: int=20) -> List[str]:
+def hybrid_retrieve(
+    n4j,
+    query: str,
+    top_k: int = 3,
+    vector_candidates: int = 20,
+    use_rerank: bool = True,
+) -> List[str]:
     """
     Hybrid retrieval combining vector search and LLM reranking
     
@@ -192,7 +237,11 @@ def hybrid_retrieve(n4j, query: str, top_k: int=3, vector_candidates: int=20) ->
     
     if len(candidates) <= top_k:
         return [c['gid'] for c in candidates]
-    
+
+    if not use_rerank:
+        logger.info("Hybrid retrieval rerank disabled; using vector-only top_k=%d", top_k)
+        return [c['gid'] for c in candidates[:top_k]]
+
     ranked_gids = _run_async(llm_rerank(candidates, query, top_k=top_k))
 
     logger.info(f"Hybrid retrieval completed. Top {top_k} GIDs: {ranked_gids}")
@@ -212,6 +261,7 @@ def get_ranked_context(n4j, gid: str, query: str, max_items: int=50) -> List[str
     """
     query_embedding = get_bge_m3_embedding(query)
 
+    # 1. Fetch Sentences from Summary Node
     context_query = """
     MATCH (s:Summary {gid: $gid})-[:HAS_SENTENCE]->(sent)
     WHERE sent.embedding IS NOT NULL
@@ -219,47 +269,48 @@ def get_ranked_context(n4j, gid: str, query: str, max_items: int=50) -> List[str
     """
     logger.info(f"Retrieving context sentences for GID: {gid[:8]}...")
     
-    MAX_TRIPLETS = 1000
-
+    sentence_results = n4j.query(context_query, {'gid': gid})
+    scored_sentences = []
+    
+    for r in sentence_results:
+        sim = cosine_similarity(query_embedding, r['embedding'])
+        scored_sentences.append((r['text'], sim))
+    
+    scored_sentences.sort(key=lambda x: x[1], reverse=True)
+    
+    # 2. Fetch Triples from neighborhood
+    MAX_TRIPLETS = 500
     ret_query = """
         MATCH (n)-[r]-(m)
         WHERE n.gid = $gid AND NOT n:Summary AND NOT m:Summary
-          AND id(n) < id(m)
+          AND elementId(n) < elementId(m)
         RETURN n.id AS n_id, TYPE(r) AS rel_type, m.id AS m_id
         LIMIT $max_triples
     """
-
-    results = n4j.query(ret_query, {'gid': gid, 'max_triples': MAX_TRIPLETS})
-
-    if not results:
-        logger.warning(f"No sentences with embeddings found for GID: {gid[:8]}")
-        return []
-    
-    logger.info(f"[Ranked Context] Retrieved {len(results)} sentences for GID: {gid[:8]}")
-
-    query_terms = set(query.lower().split())
-
+    triple_results = n4j.query(ret_query, {'gid': gid, 'max_triples': MAX_TRIPLETS})
     scored_triples = []
+    
+    if triple_results:
+        query_terms = set(query.lower().split())
+        for r in triple_results:
+            triple_str = f"{r['n_id']} {r['rel_type']} {r['m_id']}"
+            triple_lower = triple_str.lower()
+            matches = sum(1 for term in query_terms if term in triple_lower)
+            relevance = matches / (len(query_terms) + 1)
+            scored_triples.append((triple_str, relevance))
+        scored_triples.sort(key=lambda x: x[1], reverse=True)
 
-    for r in results:
-        triple_str = f"{r['n_id']} {r['rel_type']} {r['m_id']}"
-        triple_lower = triple_str.lower()
+    # Combine: Sentences first, then triples
+    combined_context = [s[0] for s in scored_sentences[:max_items]]
+    remaining_slots = max_items - len(combined_context)
+    if remaining_slots > 0:
+        combined_context.extend([t[0] for t in scored_triples[:remaining_slots]])
 
-        matches = sum(1 for term in query_terms if term in triple_lower)
-        relevance = matches / (len(query_terms) + 1)
-
-        scored_triples.append((triple_str, relevance))
-
-    scored_triples.sort(key=lambda x: x[1], reverse=True)
-
-    logger.info(f"[Ranked Context] Scored {len(scored_triples)} triples for GID: {gid[:8]}")
-
-    if scored_triples and scored_triples[0][1] > 0:
-        logger.info(f"  Top triple relevance: {scored_triples[0][1]:.3f}")
-        if len(scored_triples) >= max_items:
-            logger.info(f"  #{max_items} triple relevance: {scored_triples[max_items-1][1]:.3f}")
-
-    return [t[0] for t in scored_triples[:max_items]]
+    logger.info(f"[Ranked Context] GID: {gid[:8]} - Retrieved {len(scored_sentences)} sentences, {len(scored_triples)} triples.")
+    if scored_sentences:
+        logger.info(f"  Top sentence similarity: {scored_sentences[0][1]:.3f}")
+    
+    return combined_context
 
 def get_ranked_link_context(n4j, gid: str, query: str, max_items: int=50) -> List[str]:
     """
@@ -290,19 +341,37 @@ def get_ranked_link_context(n4j, gid: str, query: str, max_items: int=50) -> Lis
     """
 
     results = n4j.query(retrieve_query, {'gid': gid, 'max_refs': MAX_REFS})
+    link_type = "REFERENCE"
 
     if not results:
-        logger.warning(f"No reference context found for GID: {gid[:8]}")
-        return []
+        logger.warning(f"No reference context found for GID: {gid[:8]}, falling back to IS_REFERENCE_OF")
+        retrieve_query = """
+            MATCH (n)
+            WHERE n.gid = $gid AND NOT n:Summary
+            MATCH (n)-[r:IS_REFERENCE_OF]-(m)
+            WHERE NOT m:Summary
+            MATCH (m)-[s]-(o)
+            WHERE NOT o:Summary AND TYPE(s) <> 'IS_REFERENCE_OF'
+            RETURN n.id AS n_id, m.id AS m_id, TYPE(s) AS rel_type, o.id AS o_id
+            LIMIT $max_refs
+        """
+        results = n4j.query(retrieve_query, {'gid': gid, 'max_refs': MAX_REFS})
+        link_type = "IS_REFERENCE_OF"
+        if not results:
+            logger.warning(f"No IS_REFERENCE_OF context found for GID: {gid[:8]}")
+            return []
 
-    logger.info(f"[Ranked Link Context] Retrieved {len(results)} reference triples for GID: {gid[:8]}")
+    logger.info(
+        f"[Ranked Link Context] Retrieved {len(results)} {link_type} triples for GID: {gid[:8]}"
+    )
 
     query_lower = query.lower()
     query_terms = set(query_lower.split())
 
     scored_refs = []
+    label = "Reference" if link_type == "REFERENCE" else "Reference(IS_REFERENCE_OF)"
     for r in results:
-        ref_str = f"Reference: {r['n_id']} has reference that {r['m_id']} {r['rel_type']} {r['o_id']}"
+        ref_str = f"{label}: {r['n_id']} has reference that {r['m_id']} {r['rel_type']} {r['o_id']}"
         ref_lower = ref_str.lower()
 
         matches = sum(1 for term in query_terms if term in ref_lower)
@@ -396,8 +465,6 @@ async def _get_improved_response_async(
     use_multi_subgraph: bool = False,
     top_k_subgraphs: int = 1,
 ) -> Tuple[str, str]:
-    client = _get_openrouter_client()
-
     logger.info(f"\n{'='*80}")
     logger.info("[Improved Response] Starting pipeline...")
     logger.info(f"{'='*80}")
@@ -438,19 +505,24 @@ Modify the response to the question using the provided references. Include preci
     logger.info(f"[Improved Response] Context: {len(selfcont_str)} self, {len(linkcont_str)} link chars")
     
     user_one = f"the question is: {query}\n\nthe provided information is:\n{selfcont_str}"
-    full_prompt_one = f"{sys_prompt_one}\n\n{user_one}"
-    first_response = await client.chat.completions.create(
-        model="google/gemini-2.0-flash-lite-001",
-        messages=[{"role": "user", "content": full_prompt_one}],
+    provider = os.getenv("LLM_PROVIDER") or "openrouter"
+    model = os.getenv("OPENROUTER_MODEL") or os.getenv("LLM_MODEL") or "google/gemini-2.0-flash-lite-001"
+    
+    res = await safe_gemini_complete_with_retry(
+        model=model,
+        prompt=user_one,
+        system_prompt=sys_prompt_one,
+        provider=provider,
     )
-    res = first_response.choices[0].message.content or ""
+    
     user_two = f"the question is: {query}\n\nthe last response of it is:\n{res}\n\nthe references are:\n{linkcont_str}"
-    full_prompt_two = f"{sys_prompt_two}\n\n{user_two}"
-    second_response = await client.chat.completions.create(
-        model="google/gemini-2.0-flash-lite-001",
-        messages=[{"role": "user", "content": full_prompt_two}],
+    
+    final_answer = await safe_gemini_complete_with_retry(
+        model=model,
+        prompt=user_two,
+        system_prompt=sys_prompt_two,
+        provider=provider,
     )
-    final_answer = second_response.choices[0].message.content or ""
     
     logger.info(f"[Improved Response] Generated answer ({len(final_answer)} chars)")
     

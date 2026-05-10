@@ -1,10 +1,11 @@
 # ./kgs_builder/data_processing/data_chunk.py
 
+import os
 import json
 from typing import List
 from pydantic import BaseModel
 from kgs_builder.core.agentic_chunker import AgenticChunker
-from nano_graphrag._llm import _get_openrouter_client
+from nano_graphrag._llm import gemini_complete_if_cache, _get_openrouter_model
 from helpers.logger import get_logger
 
 logger = get_logger("data_chunk", log_file="logs/data_chunk.log")
@@ -45,10 +46,11 @@ async def run_chunk(essay):
     paragraphs = [p.strip() for p in essay.split("\n\n") if p and p.strip()]
     essay_propositions = []
     ac = AgenticChunker()
-    client = _get_openrouter_client()
 
     for i, para in enumerate(paragraphs):
         try:
+            provider = os.getenv("LLM_PROVIDER") or "openrouter"
+            model = _get_openrouter_model()
             prompt = f"""
             Extract main propositions from the following text. 
             Return strictly in JSON format with a "sentences" field containing an array of strings.
@@ -60,11 +62,11 @@ async def run_chunk(essay):
             {{"sentences": ["proposition 1", "proposition 2", ...]}}
             """
 
-            response = await client.chat.completions.create(
-                model="google/gemini-2.0-flash-lite-001",
-                messages=[{"role": "user", "content": prompt}],
-            )
-            response_text = (response.choices[0].message.content or "").strip()
+            response_text = (await gemini_complete_if_cache(
+                model=model,
+                prompt=prompt,
+                provider=provider,
+            )).strip()
 
             propositions = _extract_propositions(response_text)
             essay_propositions.extend(propositions)

@@ -77,6 +77,7 @@ class GraphRAG:
     cheap_model_func: callable = gemini_2_5_flash_lite_complete
     cheap_model_max_token_size: int = 32768
     cheap_model_max_async: int = 16
+    llm_provider: str | None = field(default_factory=lambda: os.getenv("LLM_PROVIDER"))
 
     # storage
     key_string_value_json_storage_cls: Type[BaseKVStorage] = JsonKVStorage
@@ -133,10 +134,18 @@ class GraphRAG:
         )
 
         self.best_model_func = limit_async_func_call(self.best_model_max_async)(
-            partial(self.best_model_func, hashing_kv=self.llm_response_cache)
+            partial(
+                self.best_model_func,
+                hashing_kv=self.llm_response_cache,
+                provider=self.llm_provider,
+            )
         )
         self.cheap_model_func = limit_async_func_call(self.cheap_model_max_async)(
-            partial(self.cheap_model_func, hashing_kv=self.llm_response_cache)
+            partial(
+                self.cheap_model_func,
+                hashing_kv=self.llm_response_cache,
+                provider=self.llm_provider,
+            )
         )
 
     def insert(self, string_or_strings):
