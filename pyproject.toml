@@ -1,0 +1,48 @@
+[project]
+name = "bkg-ccr-rag"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "aiohttp>=3.13.3",
+    "camel>=0.1.2",
+    "camel-ai>=0.2.89",
+    "datasets>=4.8.4",
+    "google-genai>=1.68.0",
+    "ipykernel>=7.2.0",
+    "jupyter>=1.1.1",
+    "lancedb>=0.30.0",
+    "neo4j>=6.1.0",
+    "networkx>=3.6.1",
+    "nltk>=3.9.3",
+    "numpy>=2.4.2",
+    "openai>=2.24.0",
+    "pandas>=3.0.1",
+    "pydantic>=2.12.0",
+    "pymilvus>=2.6.10",
+    "python-dotenv>=1.2.1",
+    "ragas>=0.4.3",
+    "scikit-learn>=1.6.1",
+    "tiktoken>=0.12.0",
+    "torch>=2.10.0",
+    "torch-geometric>=2.7.0",
+    "tqdm>=4.67.3",
+    "transformers>=5.2.0",
+    "unstructured>=0.18.32",
+    "vertexai>=1.71.1",
+    "wandb>=0.25.1",
+]
+
+[tool.uv.workspace]
+members = [
+    "kgs_builder",
+    "test",
+    "kg_builder",
+]
+
+[dependency-groups]
+dev = [
+    "ipykernel>=7.2.0",
+    "jupyterlab>=4.5.5",
+]

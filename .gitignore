@@ -42,5 +42,19 @@ data/
 
 # others folder
 .claude/
-
+tests/
 *.log
+.agents/
+evaluation/
+
+cache/
+
+checkpoints/
+
+wandb/
+
+AGENTS.md
+
+test.py
+
+docker-compose.yml
